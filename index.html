@@ -969,6 +969,7 @@ parse_Primary(n.content)}catch(l){}a="/EncryptionInfo";n=Qe.find(e,a);if(!n||!n.
   Entrar
 </button>
 
+
     <!-- Mensagem de erro -->
     <div
       id="loginMessage"
@@ -979,7 +980,8 @@ parse_Primary(n.content)}catch(l){}a="/EncryptionInfo";n=Qe.find(e,a);if(!n||!n.
         font-size: 13px;
       "
     ></div>
-</div>
+  </div>
+
 </div>
 
   <!-- Top Header Navigation -->
@@ -1847,131 +1849,109 @@ function saveState() {
 
 const SHARED_PASSWORD = "Procedimentos_SGO";
 
-async function openUserPanel(user) {
-
-  currentUser = user;
-
-  document.getElementById("userEmail").textContent =
-    currentUser.email;
-
-  document.getElementById("loginScreen").style.display = "none";
-
-  appState = await loadState();
-
-  renderNavGrid();
-  renderStageDetail();
-  updateKPIs();
-}
-
 async function handleLogin() {
+  const email = document.getElementById("loginEmail").value.trim();
+  const password = document.getElementById("loginPassword").value;
 
-  const email =
-    document.getElementById("loginEmail").value.trim().toLowerCase();
+  const button = document.getElementById("loginButton");
+  const message = document.getElementById("loginMessage");
 
-  const password =
-    document.getElementById("loginPassword").value;
-
-  const button =
-    document.getElementById("loginButton");
-
-  const message =
-    document.getElementById("loginMessage");
+  message.textContent = "";
 
   if (!email || !password) {
-    message.textContent =
-      "Preencha o e-mail e a senha.";
+    message.textContent = "Preencha o e-mail e a senha.";
     return;
   }
 
-  if (!email.endsWith("@sjc.sp.gov.br")) {
+  if (!email.toLowerCase().endsWith("@sjc.sp.gov.br")) {
     message.textContent =
       "Acesso permitido somente para e-mails @sjc.sp.gov.br.";
     return;
   }
 
+  // Todos os usuários autorizados utilizam a mesma senha.
   if (password !== SHARED_PASSWORD) {
-    message.textContent =
-      "Senha de acesso incorreta.";
+    message.textContent = "Senha incorreta.";
     return;
   }
 
   button.disabled = true;
   button.textContent = "Entrando...";
-  message.textContent = "";
 
   try {
-
-    // Primeiro tenta entrar.
-    // Se o e-mail ainda não tiver uma conta, cria automaticamente
-    // a conta com a senha compartilhada e entra em seguida.
+    // 1) Primeiro tenta entrar normalmente.
+    // Usuários que já possuem conta não passam novamente pelo cadastro.
     let { data, error } =
       await supabaseClient.auth.signInWithPassword({
         email: email,
         password: SHARED_PASSWORD
       });
 
+    // 2) Se não houver conta, cria automaticamente.
+    // Isso funciona sem e-mail de confirmação quando
+    // Authentication > Providers > Email > Confirm Email está OFF.
     if (error) {
+      const invalidCredentials =
+        error.message &&
+        error.message.toLowerCase().includes("invalid login credentials");
 
-      console.warn("Login inicial não realizado:", error);
+      if (invalidCredentials) {
+        const signupResult =
+          await supabaseClient.auth.signUp({
+            email: email,
+            password: SHARED_PASSWORD
+          });
 
-      const signupResult =
-        await supabaseClient.auth.signUp({
-          email: email,
-          password: SHARED_PASSWORD
-        });
+        if (!signupResult.error && signupResult.data?.session) {
+          data = signupResult.data;
+          error = null;
+        } else if (signupResult.error) {
+          const alreadyRegistered =
+            signupResult.error.message &&
+            signupResult.error.message.toLowerCase().includes("already registered");
 
-      if (!signupResult.error && signupResult.data && signupResult.data.session) {
-        data = signupResult.data;
-        error = null;
-      } else if (signupResult.error) {
-
-        console.error("Erro ao criar conta automaticamente:", signupResult.error);
-
-        const alreadyRegistered =
-          signupResult.error.message &&
-          signupResult.error.message.toLowerCase().includes("already registered");
-
-        if (alreadyRegistered) {
-          message.textContent =
-            "Não foi possível entrar com este e-mail. Verifique se o e-mail está correto e se a conta foi configurada para usar a senha de acesso.";
-        } else {
-          message.textContent =
-            signupResult.error.message ||
-            "Não foi possível criar o acesso para este e-mail.";
+          if (!alreadyRegistered) {
+            console.error("Erro ao criar conta automaticamente:", signupResult.error);
+            message.textContent =
+              signupResult.error.message ||
+              "Não foi possível criar a conta.";
+            button.disabled = false;
+            button.textContent = "Entrar";
+            return;
+          }
         }
-
-        button.disabled = false;
-        button.textContent = "Entrar";
-        return;
-      } else {
-        message.textContent =
-          "A conta foi criada, mas o acesso não pôde ser iniciado. Tente entrar novamente.";
-
-        button.disabled = false;
-        button.textContent = "Entrar";
-        return;
       }
     }
 
-    if (error || !data || !data.user) {
+    if (error || !data?.user) {
       console.error("Erro no login:", error);
-
-      message.textContent =
-        "Não foi possível entrar. Verifique o e-mail e a senha.";
-
+      message.textContent = "E-mail ou senha incorretos.";
       button.disabled = false;
       button.textContent = "Entrar";
       return;
     }
 
-    await openUserPanel(data.user);
+    currentUser = data.user;
+
+    document.getElementById("userEmail").textContent =
+      currentUser.email;
+
+    // Esconde a tela de login.
+    document.getElementById("loginScreen").style.display = "none";
+
+    // Carrega o progresso individual desse usuário.
+    appState = await loadState();
+
+    // Atualiza o painel.
+    renderNavGrid();
+    renderStageDetail();
+    updateKPIs();
 
   } catch (error) {
-
     console.error("Erro geral no login:", error);
 
     message.textContent =
-      "Ocorreu um erro ao tentar entrar. Tente novamente.";
+      "Ocorreu um erro ao tentar entrar.";
 
     button.disabled = false;
     button.textContent = "Entrar";
